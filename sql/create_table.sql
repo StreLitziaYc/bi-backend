@@ -19,10 +19,11 @@ create table if not exists user
     index idx_userAccount (userAccount)
 ) comment '用户' collate = utf8mb4_unicode_ci;
 
--- 帖子表
+-- 图表表
 create table if not exists chart
 (
     id         bigint auto_increment comment 'id' primary key,
+    name       varchar(128)                       null comment '图表名称',
     goal       text                               null comment '分析目标',
     chartData  text                               null comment '图表数据',
     chartType  varchar(128)                       null comment '图表类型',
