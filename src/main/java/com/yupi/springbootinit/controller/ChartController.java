@@ -221,6 +221,8 @@ public class ChartController {
     @PostMapping("/gen")
     public BaseResponse<BiResultVO> uploadFile(@RequestPart("file") MultipartFile multipartFile,
                                                GenChartRequest genChartRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ExcelUtils.validate(multipartFile);
         String name = genChartRequest.getName();
         String goal = genChartRequest.getGoal();
         String chartType = genChartRequest.getChartType();
@@ -233,7 +235,6 @@ public class ChartController {
         // 用户输入
         String userInput = AiManager.getUserInput(multipartFile, goal, chartType);
         // 生成结果
-        User loginUser = userService.getLoginUser(request);
         BiResultVO biResult = aiManager.doChat(userInput);
         Chart chart = Chart.builder()
                 .name(name)
