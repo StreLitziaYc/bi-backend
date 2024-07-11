@@ -9,7 +9,13 @@ import com.alibaba.dashscope.exception.InputRequiredException;
 import com.alibaba.dashscope.exception.NoApiKeyException;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.exception.BusinessException;
+import com.yupi.springbootinit.exception.ThrowUtils;
+import com.yupi.springbootinit.model.vo.BiResultVO;
+import com.yupi.springbootinit.utils.ExcelUtils;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,12 +25,16 @@ import java.util.List;
  * Ai模型调用
  */
 @Slf4j
+@Data
 public class AiManager {
+
     private final Generation generation;
     private final GenerationParam param;
+    private final List<Message> messages;
 
     public AiManager(String modelName) {
         generation = new Generation();
+        messages = new ArrayList<>();
         Message systemMsg = Message.builder()
                 .role(Role.SYSTEM.getValue())
                 .content("你是一个数据分析师和前端开发专家，接下来我会按照以下固定格式给你提供内容：\n" +
@@ -53,56 +63,84 @@ public class AiManager {
         Message assistantMessage = Message.builder()
                 .role(Role.ASSISTANT.getValue())
                 .content("""
-                        $$$$$
+                        %%%%%
                         {
-                            title: {
-                                text: '网站用户增长情况',
-                                subtext: ''
+                            "title": {
+                                "text": "网站用户增长情况",
+                                "subtext": ""
                                 },
-                            tooltip: {
-                                trigger: 'axis',
-                                axisPointer: {
-                                    type: 'shadow'
+                            "tooltip": {
+                                "trigger": "axis",
+                                "axisPointer": {
+                                    "type": "shadow"
                                     }
                             },
-                            legend: {
-                                data: ['用户数']
+                            "legend": {
+                                "data": ["用户数"]
                                 },
-                            xAxis: {
-                                data: ['1号', '2号', '3号']
+                            "xAxis": {
+                                "data": ["1号", "2号", "3号"]
                             },
-                            yAxis: {},
-                            series: [{
-                                name: '用户数',
-                                type: 'bar',
-                                data: [10, 20, 30]
+                            "yAxis": {},
+                            "series": [{
+                                "name": "用户数",
+                                "type": "bar",
+                                "data": [10, 20, 30]
                             }]
                         }
-                        $$$$$
+                        %%%%%
                         根据数据分析可得，该网站用户数量逐日增长，时间越长，用户数量增长越多。""")
                 .build();
+        messages.add(systemMsg);
+        messages.add(userMessage);
+        messages.add(assistantMessage);
         param = GenerationParam.builder()
                 .model(modelName)
-                .messages(Arrays.asList(systemMsg, userMessage, assistantMessage))
+                .messages(messages)
                 .build();
+        log.info("模型已完成初始化");
     }
 
-    public String doChat(String message) {
+    public static String getUserInput(MultipartFile multipartFile, String goal, String chartType) {
+        String excelContent = ExcelUtils.excelToCsv(multipartFile);
+        return getUserInput(excelContent, goal, chartType);
+    }
+
+    public static String getUserInput(String excelContent, String goal, String chartType) {
+        if (StringUtils.isNotBlank(chartType)) goal += "，请使用" + chartType;
+        return "分析需求：\n" +
+                goal + "\n" +
+                "原始数据：\n" +
+                excelContent + "\n";
+    }
+
+    public BiResultVO doChat(String message) {
+        log.info("用户提问：{}", message);
         Message userMessage = Message.builder()
                 .role(Role.USER.getValue())
                 .content(message)
                 .build();
-        List<Message> messages = new ArrayList<>(param.getMessages());
-        messages.add(userMessage);
-        param.setMessages(messages);
+        List<Message> curMessages = new ArrayList<>(messages);
+        curMessages.add(userMessage);
+        param.setMessages(curMessages);
         GenerationResult generationResult;
-
         try {
             generationResult = generation.call(param);
         } catch (NoApiKeyException | InputRequiredException e) {
             log.error("AI模型调用错误", e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "AI模型调用错误");
         }
-        return generationResult.getOutput().getChoices().get(0).getMessage().getContent();
+        String stringResult = generationResult.getOutput().getChoices().get(0).getMessage().getContent();
+        log.info("AI生成结果：{}", stringResult);
+        return parseString2BiRes(stringResult);
+    }
+
+    private BiResultVO parseString2BiRes(String string) {
+        String[] splits = string.split("%%%%%");
+        ThrowUtils.throwIf(splits.length < 3, ErrorCode.SYSTEM_ERROR, "AI生成错误");
+        BiResultVO biResultVO = new BiResultVO();
+        biResultVO.setGenChart(splits[1].trim());
+        biResultVO.setGenResult(splits[2].trim());
+        return biResultVO;
     }
 }

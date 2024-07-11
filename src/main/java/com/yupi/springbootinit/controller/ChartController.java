@@ -11,11 +11,13 @@ import com.yupi.springbootinit.constant.FileConstant;
 import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
+import com.yupi.springbootinit.manager.AiManager;
 import com.yupi.springbootinit.model.dto.chart.*;
 import com.yupi.springbootinit.model.dto.file.UploadFileRequest;
 import com.yupi.springbootinit.model.entity.Chart;
 import com.yupi.springbootinit.model.entity.User;
 import com.yupi.springbootinit.model.enums.FileUploadBizEnum;
+import com.yupi.springbootinit.model.vo.BiResultVO;
 import com.yupi.springbootinit.service.ChartService;
 import com.yupi.springbootinit.service.UserService;
 import com.yupi.springbootinit.utils.ExcelUtils;
@@ -31,12 +33,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.util.List;
 
-/**
- * 帖子接口
- *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
- */
 @RestController
 @RequestMapping("/chart")
 @Slf4j
@@ -47,6 +43,9 @@ public class ChartController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AiManager aiManager;
 
     // region 增删改查
 
@@ -220,8 +219,8 @@ public class ChartController {
      * @return
      */
     @PostMapping("/gen")
-    public BaseResponse<String> uploadFile(@RequestPart("file") MultipartFile multipartFile,
-                                           GenChartRequest genChartRequest, HttpServletRequest request) {
+    public BaseResponse<BiResultVO> uploadFile(@RequestPart("file") MultipartFile multipartFile,
+                                               GenChartRequest genChartRequest, HttpServletRequest request) {
         String name = genChartRequest.getName();
         String goal = genChartRequest.getGoal();
         String chartType = genChartRequest.getChartType();
@@ -232,11 +231,23 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isBlank(name) && name.length() > 100, ErrorCode.PARAMS_ERROR, "名称过长");
 
         // 用户输入
-        StringBuilder userInput = new StringBuilder();
-        userInput.append("你是一个数据分析师，接下来我会给你分析目标和原始的数据，请告诉我分析结论。\n")
-                .append("分析目标：").append(goal).append("\n")
-                .append("数据").append(ExcelUtils.excelToCsv(multipartFile)).append("\n");
-        return ResultUtils.success(userInput.toString());
+        String userInput = AiManager.getUserInput(multipartFile, goal, chartType);
+        // 生成结果
+        User loginUser = userService.getLoginUser(request);
+        BiResultVO biResult = aiManager.doChat(userInput);
+        Chart chart = Chart.builder()
+                .name(name)
+                .goal(goal)
+                .chartData(ExcelUtils.excelToCsv(multipartFile))
+                .chartType(chartType)
+                .genChart(biResult.getGenChart())
+                .genResult(biResult.getGenResult())
+                .userId(loginUser.getId())
+                .build();
+        boolean save = chartService.save(chart);
+        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "图表保存失败");
+        biResult.setChatId(chart.getId());
+        return ResultUtils.success(biResult);
     }
 
 }

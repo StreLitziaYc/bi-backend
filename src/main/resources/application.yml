@@ -101,3 +101,6 @@ knife4j:
         api-rule: package
         api-rule-resources:
           - com.yupi.springbootinit.controller
+ai:
+  manager:
+    model-name: qwen-long
