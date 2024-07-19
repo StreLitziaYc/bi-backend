@@ -55,6 +55,7 @@ public class ExcelUtils {
 
     /**
      * 读取文件
+     *
      * @param file
      * @return
      */
@@ -78,19 +79,27 @@ public class ExcelUtils {
     public static String excelToCsv(MultipartFile multipartFile) {
         // 读取数据
         List<Map<Integer, String>> list = readExcel(multipartFile);
+        return mapListToCsv(list);
+    }
+
+    public static <K, V> String mapListToCsv(List<Map<K, V>> mapList) {
         // 如果数据为空
-        if (CollUtil.isEmpty(list)) return "";
+        if (CollUtil.isEmpty(mapList)) return "";
         // 转为CSV
         StringBuilder stringBuilder = new StringBuilder();
-        list.forEach(dataMap -> stringBuilder.append(StringUtils.join(dataMap.values().stream().filter(ObjectUtils::isNotEmpty).toList(), ","))
+        mapList.forEach(dataMap -> stringBuilder.append(StringUtils.join(
+                        dataMap.values().stream().filter(ObjectUtils::isNotEmpty).map(V::toString).toList(),
+                        ","))
                 .append("\n"));
         return stringBuilder.toString();
     }
+
     public static List<String> getHeaderList(List<Map<Integer, String>> list) {
         // 如果数据为空
         if (CollUtil.isEmpty(list)) return Collections.emptyList();
         return list.get(0).values().stream().toList();
     }
+
     /**
      * 获取表头
      *
@@ -114,6 +123,7 @@ public class ExcelUtils {
         list.forEach(dataMap -> dataList.add(dataMap.values().stream().toList()));
         return dataList;
     }
+
     /**
      * 获取表格数据
      *

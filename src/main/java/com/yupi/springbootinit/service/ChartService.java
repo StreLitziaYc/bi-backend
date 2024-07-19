@@ -22,4 +22,6 @@ public interface ChartService extends IService<Chart> {
     void createChartTable(MultipartFile multipartFile, Long chartId);
 
     void createChartTable(File file, Long chartId);
+
+    String queryChartData(Long chartId);
 }

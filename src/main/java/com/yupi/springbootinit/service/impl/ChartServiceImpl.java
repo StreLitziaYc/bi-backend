@@ -1,5 +1,6 @@
 package com.yupi.springbootinit.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.yupi.springbootinit.common.ErrorCode;
@@ -16,12 +17,14 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import java.io.File;
 import java.sql.SQLSyntaxErrorException;
 import java.util.List;
+import java.util.Map;
 
 /**
 * @author Strelitzia
@@ -81,6 +84,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart>
     }
 
     @Override
+    @Transactional
     public void createChartTable(MultipartFile multipartFile, Long chartId) {
         List<String> headerList = ExcelUtils.getHeaderList(multipartFile);
         List<List<String>> dataList = ExcelUtils.getDataList(multipartFile);
@@ -93,6 +97,7 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart>
     }
 
     @Override
+    @Transactional
     public void createChartTable(File file, Long chartId) {
         List<String> headerList = ExcelUtils.getHeaderList(file);
         List<List<String>> dataList = ExcelUtils.getDataList(file);
@@ -102,6 +107,14 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart>
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, e.getMessage());
         }
         dataList.forEach(data -> chartMapper.insertChartData(chartId, headerList, data));
+    }
+
+    @Override
+    public String queryChartData(Long chartId) {
+        // 获取数据
+        List<Map<String, Object>> mapList = chartMapper.queryChartData(chartId);
+        // 转为CSV
+        return ExcelUtils.mapListToCsv(mapList);
     }
 
 }

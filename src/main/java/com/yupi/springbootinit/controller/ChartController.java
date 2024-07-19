@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -219,6 +220,7 @@ public class ChartController {
      * @return
      */
     @PostMapping("/gen")
+    @Transactional
     public BaseResponse<BiResultVO> uploadFile(@RequestPart("file") MultipartFile multipartFile,
                                                GenChartRequest genChartRequest, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
@@ -231,23 +233,25 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isBlank(goal), ErrorCode.PARAMS_ERROR, "分析目标为空");
         // 名称是否为空且长度是否<100
         ThrowUtils.throwIf(StringUtils.isBlank(name) && name.length() > 100, ErrorCode.PARAMS_ERROR, "名称过长");
-
-        // 用户输入
-        String userInput = AiManager.getUserInput(multipartFile, goal, chartType);
-        // 生成结果
-        BiResultVO biResult = aiManager.doChat(userInput);
+        // 保存基本数据
         Chart chart = Chart.builder()
                 .name(name)
                 .goal(goal)
-                .chartData(ExcelUtils.excelToCsv(multipartFile))
                 .chartType(chartType)
-                .genChart(biResult.getGenChart())
-                .genResult(biResult.getGenResult())
                 .userId(loginUser.getId())
                 .build();
         boolean save = chartService.save(chart);
-        chartService.createChartTable(multipartFile, chart.getId());
-        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "图表保存失败");
+        Long chartId = chart.getId();
+        chartService.createChartTable(multipartFile, chartId);
+        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "输入图表保存失败");
+        // 用户输入
+        String userInput = AiManager.getUserInput(chartService.queryChartData(chartId), goal, chartType);
+        // 生成结果
+        BiResultVO biResult = aiManager.doChat(userInput);
+        chart.setGenChart(biResult.getGenChart());
+        chart.setGenResult(biResult.getGenResult());
+        save = chartService.updateById(chart);
+        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "生成图表保存失败");
         biResult.setChatId(chart.getId());
         return ResultUtils.success(biResult);
     }

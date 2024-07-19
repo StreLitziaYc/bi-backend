@@ -41,6 +41,6 @@
         </foreach>
     </update>
     <select id="queryChartData" resultType="java.util.Map">
-        select * from chart_${chatId}
+        select * from chart_#{chartId}
     </select>
 </mapper>
