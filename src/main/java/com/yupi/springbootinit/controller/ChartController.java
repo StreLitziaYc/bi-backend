@@ -246,6 +246,7 @@ public class ChartController {
                 .userId(loginUser.getId())
                 .build();
         boolean save = chartService.save(chart);
+        chartService.createChartTable(multipartFile, chart.getId());
         ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "图表保存失败");
         biResult.setChatId(chart.getId());
         return ResultUtils.success(biResult);

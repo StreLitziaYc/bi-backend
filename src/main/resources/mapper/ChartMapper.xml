@@ -24,4 +24,23 @@
         userId,createTime,updateTime,
         isDelete
     </sql>
+    <insert id="insertChartData">
+        insert into chart_#{chartId}
+        <foreach collection="headerList" item="header" open="(" close=")" separator=",">
+            ${header}
+        </foreach>
+        values
+        <foreach collection="dataList" item="data" separator="," open="(" close=")">
+            #{data}
+        </foreach>
+    </insert>
+    <update id="createChartData">
+        create table chart_#{chartId}
+        <foreach collection="headerList" separator="," item="header" open="(" close=")">
+            ${header} varchar(128)
+        </foreach>
+    </update>
+    <select id="queryChartData" resultType="java.util.Map">
+        select * from chart_${chatId}
+    </select>
 </mapper>

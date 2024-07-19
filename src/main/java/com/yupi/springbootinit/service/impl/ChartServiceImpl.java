@@ -10,10 +10,18 @@ import com.yupi.springbootinit.mapper.ChartMapper;
 import com.yupi.springbootinit.model.dto.chart.ChartQueryRequest;
 import com.yupi.springbootinit.model.entity.Chart;
 import com.yupi.springbootinit.service.ChartService;
+import com.yupi.springbootinit.utils.ExcelUtils;
 import com.yupi.springbootinit.utils.SqlUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.annotation.Resource;
+import java.io.File;
+import java.sql.SQLSyntaxErrorException;
+import java.util.List;
 
 /**
 * @author Strelitzia
@@ -23,6 +31,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart>
     implements ChartService{
+    @Resource
+    ChartMapper chartMapper;
+
     @Override
     public void validChart(Chart chart, boolean add) {
         if (chart == null) {
@@ -67,6 +78,30 @@ public class ChartServiceImpl extends ServiceImpl<ChartMapper, Chart>
         queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
                 sortField);
         return queryWrapper;
+    }
+
+    @Override
+    public void createChartTable(MultipartFile multipartFile, Long chartId) {
+        List<String> headerList = ExcelUtils.getHeaderList(multipartFile);
+        List<List<String>> dataList = ExcelUtils.getDataList(multipartFile);
+        try {
+            chartMapper.createChartData(chartId, headerList);
+        } catch (BadSqlGrammarException e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, e.getMessage());
+        }
+        dataList.forEach(data -> chartMapper.insertChartData(chartId, headerList, data));
+    }
+
+    @Override
+    public void createChartTable(File file, Long chartId) {
+        List<String> headerList = ExcelUtils.getHeaderList(file);
+        List<List<String>> dataList = ExcelUtils.getDataList(file);
+        try {
+            chartMapper.createChartData(chartId, headerList);
+        } catch (BadSqlGrammarException e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, e.getMessage());
+        }
+        dataList.forEach(data -> chartMapper.insertChartData(chartId, headerList, data));
     }
 
 }
