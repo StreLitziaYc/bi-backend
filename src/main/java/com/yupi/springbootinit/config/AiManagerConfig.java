@@ -18,7 +18,7 @@ public class AiManagerConfig {
     private String modelName;
 
     @Bean
-    public AiManager aiManager() {
+    public AiManager getAiManager() {
         return new AiManager(modelName);
     }
 }

@@ -12,6 +12,7 @@ import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
 import com.yupi.springbootinit.manager.AiManager;
+import com.yupi.springbootinit.manager.RedissonLimiterManager;
 import com.yupi.springbootinit.model.dto.chart.*;
 import com.yupi.springbootinit.model.dto.file.UploadFileRequest;
 import com.yupi.springbootinit.model.entity.Chart;
@@ -47,6 +48,9 @@ public class ChartController {
 
     @Resource
     private AiManager aiManager;
+
+    @Resource
+    private RedissonLimiterManager redissonLimiterManager;
 
     // region 增删改查
 
@@ -233,6 +237,8 @@ public class ChartController {
         ThrowUtils.throwIf(StringUtils.isBlank(goal), ErrorCode.PARAMS_ERROR, "分析目标为空");
         // 名称是否为空且长度是否<100
         ThrowUtils.throwIf(StringUtils.isBlank(name) && name.length() > 100, ErrorCode.PARAMS_ERROR, "名称过长");
+        // 限流判断
+        redissonLimiterManager.doRateLimit("genChart:" + loginUser.getId());
         // 保存基本数据
         Chart chart = Chart.builder()
                 .name(name)
