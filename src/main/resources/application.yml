@@ -102,3 +102,8 @@ knife4j:
 ai:
   manager:
     model-name: qwen-long
+thread-pool-executor:
+  config:
+    core-pool-size: 4
+    maximum-pool-size: 8
+    keep-alive-time: 100

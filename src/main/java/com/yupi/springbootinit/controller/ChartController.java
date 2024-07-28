@@ -8,6 +8,7 @@ import com.yupi.springbootinit.common.DeleteRequest;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.common.ResultUtils;
 import com.yupi.springbootinit.constant.FileConstant;
+import com.yupi.springbootinit.constant.TaskStatusConstant;
 import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
 import com.yupi.springbootinit.exception.ThrowUtils;
@@ -34,6 +35,8 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @RestController
 @RequestMapping("/chart")
@@ -51,6 +54,9 @@ public class ChartController {
 
     @Resource
     private RedissonLimiterManager redissonLimiterManager;
+
+    @Resource
+    private ThreadPoolExecutor threadPoolExecutor;
 
     // region 增删改查
 
@@ -216,7 +222,7 @@ public class ChartController {
     }
 
     /**
-     * 智能分析
+     * 智能分析（同步）
      *
      * @param multipartFile
      * @param genChartRequest
@@ -225,7 +231,7 @@ public class ChartController {
      */
     @PostMapping("/gen")
     @Transactional
-    public BaseResponse<BiResultVO> uploadFile(@RequestPart("file") MultipartFile multipartFile,
+    public BaseResponse<BiResultVO> genChart(@RequestPart("file") MultipartFile multipartFile,
                                                GenChartRequest genChartRequest, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         ExcelUtils.validate(multipartFile);
@@ -250,16 +256,88 @@ public class ChartController {
         Long chartId = chart.getId();
         chartService.createChartTable(multipartFile, chartId);
         ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "输入图表保存失败");
-        // 用户输入
-        String userInput = AiManager.getUserInput(chartService.queryChartData(chartId), goal, chartType);
-        // 生成结果
-        BiResultVO biResult = aiManager.doChat(userInput);
-        chart.setGenChart(biResult.getGenChart());
-        chart.setGenResult(biResult.getGenResult());
-        save = chartService.updateById(chart);
-        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "生成图表保存失败");
-        biResult.setChatId(chart.getId());
+        BiResultVO biResult = null;
+        try {
+            // 用户输入
+            String userInput = AiManager.getUserInput(chartService.queryChartData(chartId), goal, chartType);
+            // 生成结果
+            biResult = aiManager.doChat(userInput);
+            chart.setGenChart(biResult.getGenChart());
+            chart.setGenResult(biResult.getGenResult());
+            chart.setStatus(TaskStatusConstant.SUCCEED);
+            save = chartService.updateById(chart);
+            ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "生成图表保存失败");
+            biResult.setChatId(chart.getId());
+        } catch (Exception e) {
+            chart.setExecMessage(e.getMessage());
+            boolean update3 = chartService.updateById(chart);
+            ThrowUtils.throwIf(!update3, ErrorCode.SYSTEM_ERROR, "图表错误信息保存失败");
+        }
         return ResultUtils.success(biResult);
+    }
+
+    /**
+     * 智能分析（异步）
+     *
+     * @param multipartFile
+     * @param genChartRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/gen/async")
+    @Transactional
+    public BaseResponse<BiResultVO> genChartAsync(@RequestPart("file") MultipartFile multipartFile,
+                                               GenChartRequest genChartRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ExcelUtils.validate(multipartFile);
+        String name = genChartRequest.getName();
+        String goal = genChartRequest.getGoal();
+        String chartType = genChartRequest.getChartType();
+        // 校验
+        // 分析目标是否为空
+        ThrowUtils.throwIf(StringUtils.isBlank(goal), ErrorCode.PARAMS_ERROR, "分析目标为空");
+        // 名称是否为空且长度是否<100
+        ThrowUtils.throwIf(StringUtils.isBlank(name) && name.length() > 100, ErrorCode.PARAMS_ERROR, "名称过长");
+        // 限流判断
+        redissonLimiterManager.doRateLimit("genChart:" + loginUser.getId());
+        // 保存基本数据
+        Chart chart = Chart.builder()
+                .name(name)
+                .goal(goal)
+                .chartType(chartType)
+                .userId(loginUser.getId())
+                .build();
+        boolean save = chartService.save(chart);
+        Long chartId = chart.getId();
+        chartService.createChartTable(multipartFile, chartId);
+        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "输入图表保存失败");
+        CompletableFuture.runAsync(() -> {
+            try {
+                // 先修改状态为 running
+                chart.setStatus(TaskStatusConstant.RUNNING);
+                boolean update1 = chartService.updateById(chart);
+                ThrowUtils.throwIf(!update1, ErrorCode.SYSTEM_ERROR, "图表信息更新失败");
+                // 用户输入
+                String userInput = AiManager.getUserInput(chartService.queryChartData(chartId), goal, chartType);
+                // 生成结果
+                BiResultVO biResult = aiManager.doChat(userInput);
+//                biResult.setGenResult(result.getGenResult());
+//                biResult.setGenChart(result.getGenChart());
+                chart.setGenChart(biResult.getGenChart());
+                chart.setGenResult(biResult.getGenResult());
+                boolean saveUpdate = chartService.updateById(chart);
+                ThrowUtils.throwIf(!saveUpdate, ErrorCode.SYSTEM_ERROR, "生成图表保存失败");
+//                biResult.setChatId(chart.getId());
+                chart.setStatus(TaskStatusConstant.SUCCEED);
+                boolean update2 = chartService.updateById(chart);
+                ThrowUtils.throwIf(!update2, ErrorCode.SYSTEM_ERROR, "图表信息更新失败");
+            } catch (Exception e) {
+                chart.setExecMessage(e.getMessage());
+                boolean update3 = chartService.updateById(chart);
+                ThrowUtils.throwIf(!update3, ErrorCode.SYSTEM_ERROR, "图表错误信息保存失败");
+            }
+        }, threadPoolExecutor);
+        return ResultUtils.success(new BiResultVO());
     }
 
 }

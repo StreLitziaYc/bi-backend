@@ -72,4 +72,12 @@ public class Chart implements Serializable {
      * 是否删除
      */
     private Integer isDelete;
+    /**
+     * 执行状态
+     */
+    private String status;
+    /**
+     * 执行信息
+     */
+    private String execMessage;
 }
