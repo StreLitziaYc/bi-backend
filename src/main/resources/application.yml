@@ -30,6 +30,12 @@ spring:
     port: 6379
     limiter:
       max-rate: 5
+  # rabbitmq 配置
+  rabbitmq:
+    host: localhost
+    port: 5672
+    password: guest
+    username: guest
   # Elasticsearch 配置
   # todo 需替换配置，然后取消注释
 #  elasticsearch:

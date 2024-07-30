@@ -1,13 +1,14 @@
 package com.yupi.springbootinit.controller;
 
-import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.yupi.springbootinit.annotation.AuthCheck;
+import com.yupi.springbootinit.bizmq.BiMessageConsumer;
+import com.yupi.springbootinit.bizmq.BiMessageProducer;
 import com.yupi.springbootinit.common.BaseResponse;
 import com.yupi.springbootinit.common.DeleteRequest;
 import com.yupi.springbootinit.common.ErrorCode;
 import com.yupi.springbootinit.common.ResultUtils;
-import com.yupi.springbootinit.constant.FileConstant;
+import com.yupi.springbootinit.constant.BiMqConstant;
 import com.yupi.springbootinit.constant.TaskStatusConstant;
 import com.yupi.springbootinit.constant.UserConstant;
 import com.yupi.springbootinit.exception.BusinessException;
@@ -15,16 +16,13 @@ import com.yupi.springbootinit.exception.ThrowUtils;
 import com.yupi.springbootinit.manager.AiManager;
 import com.yupi.springbootinit.manager.RedissonLimiterManager;
 import com.yupi.springbootinit.model.dto.chart.*;
-import com.yupi.springbootinit.model.dto.file.UploadFileRequest;
 import com.yupi.springbootinit.model.entity.Chart;
 import com.yupi.springbootinit.model.entity.User;
-import com.yupi.springbootinit.model.enums.FileUploadBizEnum;
 import com.yupi.springbootinit.model.vo.BiResultVO;
 import com.yupi.springbootinit.service.ChartService;
 import com.yupi.springbootinit.service.UserService;
 import com.yupi.springbootinit.utils.ExcelUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +31,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.io.File;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -57,6 +53,12 @@ public class ChartController {
 
     @Resource
     private ThreadPoolExecutor threadPoolExecutor;
+
+    @Resource
+    private BiMessageConsumer messageConsumer;
+
+    @Resource
+    private BiMessageProducer messageProducer;
 
     // region 增删改查
 
@@ -284,7 +286,7 @@ public class ChartController {
      * @param request
      * @return
      */
-    @PostMapping("/gen/async")
+    @PostMapping("/gen/async/threadPool")
     @Transactional
     public BaseResponse<BiResultVO> genChartAsync(@RequestPart("file") MultipartFile multipartFile,
                                                GenChartRequest genChartRequest, HttpServletRequest request) {
@@ -340,4 +342,42 @@ public class ChartController {
         return ResultUtils.success(new BiResultVO());
     }
 
+    /**
+     * 智能分析（异步）
+     *
+     * @param multipartFile
+     * @param genChartRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/gen/async")
+    @Transactional
+    public BaseResponse<BiResultVO> genChartAsyncMq(@RequestPart("file") MultipartFile multipartFile,
+                                                  GenChartRequest genChartRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ExcelUtils.validate(multipartFile);
+        String name = genChartRequest.getName();
+        String goal = genChartRequest.getGoal();
+        String chartType = genChartRequest.getChartType();
+        // 校验
+        // 分析目标是否为空
+        ThrowUtils.throwIf(StringUtils.isBlank(goal), ErrorCode.PARAMS_ERROR, "分析目标为空");
+        // 名称是否为空且长度是否<100
+        ThrowUtils.throwIf(StringUtils.isBlank(name) && name.length() > 100, ErrorCode.PARAMS_ERROR, "名称过长");
+        // 限流判断
+        redissonLimiterManager.doRateLimit("genChart:" + loginUser.getId());
+        // 保存基本数据
+        Chart chart = Chart.builder()
+                .name(name)
+                .goal(goal)
+                .chartType(chartType)
+                .userId(loginUser.getId())
+                .build();
+        boolean save = chartService.save(chart);
+        Long chartId = chart.getId();
+        chartService.createChartTable(multipartFile, chartId);
+        ThrowUtils.throwIf(!save, ErrorCode.SYSTEM_ERROR, "输入图表保存失败");
+        messageProducer.sendMessage(BiMqConstant.BI_EXCHANGE, BiMqConstant.BI_ROUTING_KEY, chartId.toString());
+        return ResultUtils.success(new BiResultVO());
+    }
 }
