@@ -13,6 +13,4 @@ public class BiMessageProducer {
     public void sendMessage(String exchange, String routingKey, String message) {
         rabbitTemplate.convertAndSend(exchange, routingKey, message);
     }
-
-
 }
